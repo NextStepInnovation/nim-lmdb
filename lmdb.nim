@@ -1566,6 +1566,24 @@ proc get*(cursor: LMDBCursor, key: string, op: cursorOp = FIRST): string =
   copyMem(cast[pointer](result.cstring), cast[pointer](data.mvData), data.mvSize)
   assert result.len.uint == data.mvSize
 
+proc getWithKey*(cursor: LMDBCursor, key: string, op: cursorOp = FIRST): (string, string) =
+  ## Retrieve key/data pairs from the database using a cursor.
+  var key = key
+  var k = Val(mvSize: key.len.uint, mvData: key.cstring)
+  var data: Val
+
+  check cursorGet(cursor, addr(k), addr(data), op)
+
+  result[0] = newStringOfCap(k.mvSize)
+  result[0].setLen(k.mvSize)
+  copyMem(cast[pointer](result[0].cstring), cast[pointer](k.mvData), k.mvSize)
+
+  result[1] = newStringOfCap(data.mvSize)
+  result[1].setLen(data.mvSize)
+  copyMem(cast[pointer](result[1].cstring), cast[pointer](data.mvData), data.mvSize)
+  assert result[0].len.uint == k.mvSize
+  assert result[1].len.uint == data.mvSize
+
 iterator get*(cursor: LMDBCursor, key: string): string =
   ## Retrieve values for a given key using a cursor.
   ## Only for dbi opened with DUPSORT.
@@ -1585,6 +1603,19 @@ iterator scan_from*(cursor: LMDBCursor, key: string): string =
   while true:
     try:
       yield cursor.get(key, op=NEXT)
+    except:
+      let m = getCurrentExceptionMsg()
+      if m.len > 12 and m[0..11] == "MDB_NOTFOUND":
+        break
+      else:
+        raise
+
+iterator scan_key_from*(cursor: LMDBCursor, key: string): string =
+  ## Retrieve values having keys greater or equal to `key`
+  yield cursor.getWithKey(key, op=SET_RANGE)[0]
+  while true:
+    try:
+      yield cursor.getWithKey(key, op=NEXT)[0]
     except:
       let m = getCurrentExceptionMsg()
       if m.len > 12 and m[0..11] == "MDB_NOTFOUND":
